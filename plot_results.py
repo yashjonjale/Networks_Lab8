@@ -1,58 +1,118 @@
-# analyse.py
+#!/usr/bin/env python3
 
+# plot_results.py
+# Generates plots for Lab 8 experiments based on the results.csv file
+
+import sys
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
 from scipy import stats
 
-# Load data
-reno_data = pd.read_csv("reno_file.csv")
-cubic_data = pd.read_csv("cubic_file.csv")
+def calculate_confidence_interval(data, confidence=0.90):
+    n = len(data)
+    mean = np.mean(data)
+    sem = stats.sem(data)
+    h = sem * stats.t.ppf((1 + confidence) / 2., n-1)
+    return mean, h
 
-# Function to calculate mean, standard deviation, and confidence intervals
-def calculate_statistics(data, delay, loss):
-    subset = data[(data['delay'] == delay) & (data['loss'] == loss)]
-    mean_throughput = subset['throughput'].mean()
-    std_dev = subset['throughput'].std()
-    confidence_interval = stats.norm.interval(0.90, loc=mean_throughput, scale=std_dev / np.sqrt(len(subset)))
-    return mean_throughput, std_dev, confidence_interval
+def main(results_file):
+    # Read the results
+    df = pd.read_csv(results_file)
 
-# Generate plots
-for loss in [0.1, 0.5, 1]:
-    plt.figure()
-    for variant, data in [("Reno", reno_data), ("Cubic", cubic_data)]:
-        throughputs, cis = [], []
-        for delay in [10, 50, 100]:
-            mean, _, ci = calculate_statistics(data, delay, loss)
-            throughputs.append(mean)
+    # Convert types
+    df['Throughput(Mbps)'] = pd.to_numeric(df['Throughput(Mbps)'])
+    df['Delay(ms)'] = pd.to_numeric(df['Delay(ms)'])
+    df['Loss(%)'] = pd.to_numeric(df['Loss(%)'])
+
+    # Define TCP variants
+    tcp_variants = df['TCP_Variant'].unique()
+
+    # Create plots directory
+    import os
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
+
+    # Plot 1: (Loss=0.1%) Throughput vs. Delay for both Reno and Cubic
+    loss = 0.1
+    subset = df[df['Loss(%)'] == loss]
+    plot_throughput_vs_delay(subset, loss, tcp_variants, 'plots/plot1_loss_0.1%.png')
+
+    # Plot 2: (Loss=0.5%) Throughput vs. Delay for both Reno and Cubic
+    loss = 0.5
+    subset = df[df['Loss(%)'] == loss]
+    plot_throughput_vs_delay(subset, loss, tcp_variants, 'plots/plot2_loss_0.5%.png')
+
+    # Plot 3: (Loss=1%) Throughput vs. Delay for both Reno and Cubic
+    loss = 1.0
+    subset = df[df['Loss(%)'] == loss]
+    plot_throughput_vs_delay(subset, loss, tcp_variants, 'plots/plot3_loss_1%.png')
+
+    # Plot 4: (Delay=10ms) Throughput vs. Loss for both Reno and Cubic
+    delay = 10
+    subset = df[df['Delay(ms)'] == delay]
+    plot_throughput_vs_loss(subset, delay, tcp_variants, 'plots/plot4_delay_10ms.png')
+
+    # Plot 5: (Delay=50ms) Throughput vs. Loss for both Reno and Cubic
+    delay = 50
+    subset = df[df['Delay(ms)'] == delay]
+    plot_throughput_vs_loss(subset, delay, tcp_variants, 'plots/plot5_delay_50ms.png')
+
+    # Plot 6: (Delay=100ms) Throughput vs. Loss for both Reno and Cubic
+    delay = 100
+    subset = df[df['Delay(ms)'] == delay]
+    plot_throughput_vs_loss(subset, delay, tcp_variants, 'plots/plot6_delay_100ms.png')
+
+    print("All plots have been generated in the 'plots' directory.")
+
+def plot_throughput_vs_delay(subset, loss, tcp_variants, filename):
+    plt.figure(figsize=(10,6))
+    for tcp in tcp_variants:
+        data = subset[subset['TCP_Variant'] == tcp]
+        grouped = data.groupby('Delay(ms)')['Throughput(Mbps)'].apply(list)
+        means = []
+        cis = []
+        delays = sorted(grouped.index)
+        for delay in delays:
+            mean, ci = calculate_confidence_interval(grouped[delay])
+            means.append(mean)
             cis.append(ci)
+        plt.errorbar(delays, means, yerr=cis, label=tcp.capitalize(), capsize=5, marker='o')
 
-        # Plot throughput vs delay with error bars
-        plt.errorbar([10, 50, 100], throughputs, yerr=[(mean - ci[0], ci[1] - mean) for mean, ci in zip(throughputs, cis)], label=variant)
-
-    plt.title(f"Throughput vs Delay (Loss={loss}%)")
-    plt.xlabel("Delay (ms)")
-    plt.ylabel("Throughput (Mbps)")
+    plt.title(f'Throughput vs. Delay (Loss={loss}%)')
+    plt.xlabel('Delay (ms)')
+    plt.ylabel('Throughput (Mbps)')
     plt.legend()
-    plt.savefig(f"throughput_vs_delay_loss_{loss}.png")
+    plt.grid(True)
+    plt.savefig(filename)
+    plt.close()
 
-for delay in [10, 50, 100]:
-    plt.figure()
-    for variant, data in [("Reno", reno_data), ("Cubic", cubic_data)]:
-        throughputs, cis = [], []
-        for loss in [0.1, 0.5, 1]:
-            mean, _, ci = calculate_statistics(data, delay, loss)
-            throughputs.append(mean)
+def plot_throughput_vs_loss(subset, delay, tcp_variants, filename):
+    plt.figure(figsize=(10,6))
+    for tcp in tcp_variants:
+        data = subset[subset['TCP_Variant'] == tcp]
+        grouped = data.groupby('Loss(%)')['Throughput(Mbps)'].apply(list)
+        means = []
+        cis = []
+        losses = sorted(grouped.index)
+        for loss in losses:
+            mean, ci = calculate_confidence_interval(grouped[loss])
+            means.append(mean)
             cis.append(ci)
+        plt.errorbar(losses, means, yerr=cis, label=tcp.capitalize(), capsize=5, marker='o')
 
-        # Plot throughput vs loss with error bars
-        plt.errorbar([0.1, 0.5, 1], throughputs, yerr=[(mean - ci[0], ci[1] - mean) for mean, ci in zip(throughputs, cis)], label=variant)
-
-    plt.title(f"Throughput vs Loss (Delay={delay}ms)")
-    plt.xlabel("Loss (%)")
-    plt.ylabel("Throughput (Mbps)")
+    plt.title(f'Throughput vs. Loss (Delay={delay}ms)')
+    plt.xlabel('Loss (%)')
+    plt.ylabel('Throughput (Mbps)')
     plt.legend()
-    plt.savefig(f"throughput_vs_loss_delay_{delay}.png")
+    plt.grid(True)
+    plt.savefig(filename)
+    plt.close()
 
-# Show the generated plots
-plt.show()
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python3 plot_results.py results.csv")
+        sys.exit(1)
+    results_file = sys.argv[1]
+    main(results_file)

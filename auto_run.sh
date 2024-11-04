@@ -48,7 +48,7 @@ for delay in "${delays[@]}"; do
                 sleep 5
 
                 # Run iperf client to send file over loopback interface and capture throughput
-                iperf_output=$(iperf3 -c 127.0.0.1 -n "$file_20mb_name")
+                iperf_output=$(iperf3 -c 127.0.0.1 -F "$file_20mb_name")
                 echo "$iperf_output"
                 throughput=$(echo "$iperf_output" | grep -oP '(?<=Bytes  )\d+.\d+(?= Mbits/sec)')
                 echo "Throughput: $throughput Mbits/sec"
