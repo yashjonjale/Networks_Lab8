@@ -22,12 +22,13 @@ TCP_VARIANTS=("reno" "cubic")
 
 # Delays in ms
 DELAYS=(10 50 100)
+# DELAYS=(10)
 
 # Loss rates in percentage
 LOSSES=(0.1 0.5 1)
-
+# LOSSES=(0.1)
 # Number of runs per experiment
-RUNS=20
+RUNS=8
 
 # Network parameters
 MTU_SIZE=1500
@@ -64,21 +65,30 @@ set_tcp_variant() {
     sysctl -w net.ipv4.tcp_congestion_control=$variant
 }
 
-# Function to set tc parameters using htb and netem
+
 set_tc() {
+    # Check if the correct number of arguments is provided
+    if [ "$#" -ne 2 ]; then
+        echo "Usage: set_tc <delay(ms)> <loss(%)> <bandwidth(mbit)> <burst(k)>"
+        return 1
+    fi
+
     local delay=$1
     local loss=$2
-    echo "Configuring tc with Delay=${delay}ms and Loss=${loss}%"
+    local IFACE="lo"
 
-    # Add root htb qdisc
-    tc qdisc add dev $LOOPBACK_IF root handle 1: htb default 12
+    echo "Configuring tc with Delay=${delay}ms, Loss=${loss}%, Bandwidth=${bandwidth}mbit, and Burst=${burst}k on interface ${IFACE}"
 
-    # Add class with rate and burst
-    tc class add dev $LOOPBACK_IF parent 1: classid 1:1 htb rate $BANDWIDTH burst $BURST
-
-    # Add netem qdisc for delay and loss
-    tc qdisc add dev $LOOPBACK_IF parent 1:1 handle 10: netem delay ${delay}ms loss ${loss}%
+    sudo tc qdisc del dev lo root 2> /dev/null
+    sudo tc qdisc add dev lo root handle 1: htb default 12 r2q 1
+    sudo tc class add dev lo parent 1: classid 1:1 htb rate 100mbit quantum 1500 burst 32k
+    sudo tc class add dev lo parent 1:1 classid 1:12 htb rate 100mbit quantum 1500 burst 32k
+    sudo tc qdisc add dev lo parent 1:12 handle 10: netem delay ${delay}ms loss $loss%
+    echo "Current tc qdisc configuration on ${IFACE}:"
+    sudo tc qdisc show dev "$IFACE"
 }
+
+
 
 # Function to extract throughput from iperf3 JSON output
 extract_throughput() {

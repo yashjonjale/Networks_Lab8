@@ -4,30 +4,60 @@
 LOOPBACK_IF="lo"
 DELAY=100          # Delay in ms
 LOSS=1             # Packet loss in %
-BANDWIDTH=1000     # Bandwidth in kbit
-BURST=15           # Burst size in k
+BANDWIDTH=100000     # Bandwidth in kbit
+BURST=32           # Burst size in k
 
-# Function to set traffic control settings
+# # Function to set traffic control settings
+# set_tc() {
+#     local delay=$1
+#     local loss=$2
+#     local bandwidth=$3
+#     local burst=$4
+
+#     echo "Configuring tc with Delay=${delay}ms, Loss=${loss}%, Bandwidth=${bandwidth}kbit, and Burst=${burst}k"
+
+#     # Clear existing qdiscs
+#     tc qdisc del dev $LOOPBACK_IF root 2> /dev/null
+
+#     # Add root HTB qdisc for bandwidth control
+#     tc qdisc add dev $LOOPBACK_IF root handle 1: htb default 10
+
+#     # Add HTB class with specified bandwidth and burst
+#     tc class add dev $LOOPBACK_IF parent 1: classid 1:1 htb rate ${bandwidth}kbit burst ${burst}k
+
+#     # Add netem qdisc for delay and loss under HTB class
+#     tc qdisc add dev $LOOPBACK_IF parent 1:1 handle 10: netem delay ${delay}ms loss ${loss}%
+# }
+
+
+# #!/bin/bash
+
 set_tc() {
+    # Check if the correct number of arguments is provided
+    if [ "$#" -ne 4 ]; then
+        echo "Usage: set_tc <delay(ms)> <loss(%)> <bandwidth(mbit)> <burst(k)>"
+        return 1
+    fi
+
     local delay=$1
     local loss=$2
     local bandwidth=$3
     local burst=$4
+    local IFACE="lo"
 
-    echo "Configuring tc with Delay=${delay}ms, Loss=${loss}%, Bandwidth=${bandwidth}kbit, and Burst=${burst}k"
+    echo "Configuring tc with Delay=${delay}ms, Loss=${loss}%, Bandwidth=${bandwidth}mbit, and Burst=${burst}k on interface ${IFACE}"
 
-    # Clear existing qdiscs
-    tc qdisc del dev $LOOPBACK_IF root 2> /dev/null
-
-    # Add root HTB qdisc for bandwidth control
-    tc qdisc add dev $LOOPBACK_IF root handle 1: htb default 10
-
-    # Add HTB class with specified bandwidth and burst
-    tc class add dev $LOOPBACK_IF parent 1: classid 1:1 htb rate ${bandwidth}kbit burst ${burst}k
-
-    # Add netem qdisc for delay and loss under HTB class
-    tc qdisc add dev $LOOPBACK_IF parent 1:1 handle 10: netem delay ${delay}ms loss ${loss}%
+    sudo tc qdisc del dev lo root 2> /dev/null
+    sudo tc qdisc add dev lo root handle 1: htb default 12 r2q 1
+    sudo tc class add dev lo parent 1: classid 1:1 htb rate 100mbit quantum 1500 burst 32k
+    sudo tc class add dev lo parent 1:1 classid 1:12 htb rate 100mbit quantum 1500 burst 32k
+    sudo tc qdisc add dev lo parent 1:12 handle 10: netem delay $delay loss $loss%
+    echo "Current tc qdisc configuration on ${IFACE}:"
+    sudo tc qdisc show dev "$IFACE"
 }
+
+
+
 
 # Function to clean up traffic control settings
 cleanup_tc() {
@@ -59,14 +89,14 @@ show_tc_settings() {
 # Main Script Execution
 
 # Ensure cleanup on exit
-trap cleanup_tc EXIT
-
+# trap cleanup_tc EXIT
+# cleanup_tc
 # Set tc settings
 set_tc $DELAY $LOSS $BANDWIDTH $BURST
-
+echo "____"
 # Show tc settings
 show_tc_settings
-
+echo "____"
 # Start iperf3 server in the background
 echo "Starting iperf3 server on localhost..."
 iperf3 -s -D
